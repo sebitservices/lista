@@ -2,9 +2,17 @@
 
 Una aplicación de gestión de tareas desarrollada con Vue.js y Firebase.
 
+## Repositorio
+
+Repositorio oficial: [https://github.com/sebitservices/lista.git](https://github.com/sebitservices/lista.git)
+
 ## Configuración del proyecto
 
 ```bash
+# Clonar el repositorio
+git clone https://github.com/sebitservices/lista.git
+cd lista
+
 # Instalar dependencias
 npm install
 
@@ -43,3 +51,31 @@ Vercel detectará automáticamente que es un proyecto Vue y usará la configurac
 - Modo oscuro
 - Estadísticas de progreso
 - Diseño responsive con Tailwind CSS
+- Sistema de notificaciones para fechas límite
+
+## Próximas mejoras
+
+- **Refactorización del código**:
+  - Separar en componentes más pequeños y reutilizables
+  - Implementar composables (hooks) para la lógica de negocio
+  - Usar Pinia para la gestión del estado global
+
+- **Mejoras de funcionalidad**:
+  - Filtros avanzados de tareas
+  - Categorías/etiquetas para las tareas
+  - Subtareas anidadas
+  - Recordatorios personalizables
+  - Compartir tareas con otros usuarios
+
+- **Optimizaciones técnicas**:
+  - Implementar cache offline con IndexedDB
+  - Mejorar el rendimiento con virtualización de listas
+  - Implementar lazy loading para componentes
+  - Añadir pruebas unitarias y de integración
+
+- **UI/UX**:
+  - Animaciones y transiciones mejoradas
+  - Temas personalizables
+  - Modo de accesibilidad
+  - Vista de calendario
+  - Soporte completo para dispositivos móviles con PWA

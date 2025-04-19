@@ -227,8 +227,18 @@ export default {
       };
     },
     handleSubmit() {
+      // Ajustar la fecha para la zona horaria de Chile
+      let adjustedDueDate = this.taskForm.dueDate;
+      if (adjustedDueDate) {
+        const date = new Date(adjustedDueDate);
+        // Ajustar a la zona horaria de Chile (UTC-4)
+        const chileanDate = new Date(date.getTime() + (date.getTimezoneOffset() * 60000) + (4 * 60 * 60000));
+        adjustedDueDate = chileanDate.toISOString().split('T')[0];
+      }
+
       const taskData = {
         ...this.taskForm,
+        dueDate: adjustedDueDate,
         id: this.isEdit ? this.taskToEdit.id : Date.now().toString()
       };
       
