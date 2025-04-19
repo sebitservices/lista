@@ -1,6 +1,7 @@
 // Importar las funciones necesarias de Firebase
 import { initializeApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
 // Configuración de Firebase
 // IMPORTANTE: Si tienes problemas de 400 Bad Request, crea un nuevo proyecto en Firebase
@@ -28,9 +29,73 @@ const firebaseConfig = {
   appId: process.env.VUE_APP_FIREBASE_APP_ID
 };
 
+// Clave pública VAPID (Voluntary Application Server Identification)
+const vapidKey = "BMir8WmzhpmKoB6-QOvge8TdqDnjbklhILfewYPCeCStZmhqhToymlK7zKXcAlZsYX6LLf6k66rX07sySsLz_B4";
+
 // Inicializar Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const messaging = getMessaging(app);
+
+// Función para solicitar permisos de notificación y obtener token FCM
+export const requestNotificationPermission = async () => {
+  try {
+    // Comprobar si el navegador soporta notificaciones
+    if (!('Notification' in window)) {
+      console.error('Este navegador no soporta notificaciones de escritorio');
+      return { token: null, error: 'Browser not supported' };
+    }
+
+    // Comprobar si ya tenemos permiso
+    if (Notification.permission === 'granted') {
+      // Ya tenemos permiso, solo necesitamos obtener el token
+      const currentToken = await getToken(messaging, { vapidKey });
+      if (currentToken) {
+        console.log('Token actual:', currentToken);
+        return { token: currentToken, error: null };
+      }
+    } 
+    
+    // Solicitar permiso
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      // Obtener token después de obtener permiso
+      const currentToken = await getToken(messaging, { vapidKey });
+      if (currentToken) {
+        console.log('Nuevo token:', currentToken);
+        localStorage.setItem('fcmToken', currentToken);
+        return { token: currentToken, error: null };
+      } else {
+        console.error('No se pudo obtener el token');
+        return { token: null, error: 'No token available' };
+      }
+    } else {
+      console.error('Permiso denegado');
+      return { token: null, error: 'Permission denied' };
+    }
+  } catch (error) {
+    console.error('Error al solicitar permiso:', error);
+    return { token: null, error: error.message };
+  }
+};
+
+// Establecer manejador para mensajes en primer plano
+export const setupMessageHandler = () => {
+  onMessage(messaging, (payload) => {
+    console.log('Mensaje recibido:', payload);
+    
+    // Crear notificación nativa del navegador
+    const notificationTitle = payload.notification.title;
+    const notificationOptions = {
+      body: payload.notification.body,
+      icon: '/favicon.ico', // Usar el favicon como icono
+      badge: '/favicon.ico',
+      data: payload.data
+    };
+    
+    new Notification(notificationTitle, notificationOptions);
+  });
+};
 
 // Función para registrar un usuario
 export const registerUser = async (email, password) => {
@@ -98,4 +163,4 @@ export const logoutUser = async () => {
 };
 
 // Exposición de auth para escuchar cambios en la autenticación
-export { auth }; 
+export { auth, messaging }; 

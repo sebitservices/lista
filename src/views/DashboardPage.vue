@@ -66,6 +66,34 @@
                   </button>
                 </div>
                 <div class="overflow-y-auto" style="max-height: calc(100vh - 8rem);">
+                  <!-- Activar/Desactivar notificaciones push -->
+                  <div class="p-4 border-b" :class="isDarkMode ? 'border-gray-700' : 'border-gray-200'">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5" :class="notificationsEnabled ? 'text-green-500' : isDarkMode ? 'text-gray-400' : 'text-gray-500'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                        </svg>
+                        <span class="text-sm font-medium" :class="isDarkMode ? 'text-white' : 'text-gray-700'">
+                          Notificaciones push
+                        </span>
+                      </div>
+                      <button 
+                        @click="togglePushNotifications"
+                        class="px-3 py-1 text-xs font-medium rounded-full transition-colors"
+                        :class="notificationsEnabled 
+                          ? (isDarkMode ? 'bg-green-800 text-green-200 hover:bg-green-700' : 'bg-green-500 text-white hover:bg-green-600') 
+                          : (isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300')"
+                      >
+                        {{ notificationsEnabled ? 'Activadas' : 'Activar' }}
+                      </button>
+                    </div>
+                    <p class="text-xs mt-2" :class="isDarkMode ? 'text-gray-400' : 'text-gray-500'">
+                      {{ notificationsEnabled 
+                        ? 'Recibirás notificaciones sobre tareas próximas a vencer, incluso cuando el navegador esté cerrado.' 
+                        : 'Activa las notificaciones para recibir alertas de tareas próximas a vencer, incluso cuando el navegador esté cerrado.' }}
+                    </p>
+                  </div>
+
                   <div v-if="notifications.length === 0" class="px-4 py-6 text-center">
                     <svg :class="isDarkMode ? 'text-gray-600' : 'text-gray-400'" class="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
@@ -542,9 +570,9 @@
 <script>
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { auth, logoutUser } from '../firebase';
+import { auth, logoutUser, requestNotificationPermission, setupMessageHandler } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, getDocs, query, orderBy } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, getDocs, query, orderBy, setDoc } from 'firebase/firestore';
 import TaskModal from '../components/TaskModal.vue';
 
 export default {
@@ -562,6 +590,7 @@ export default {
     const currentTask = ref(null);
     const showNotifications = ref(false);
     const notifications = ref([]);
+    const notificationsEnabled = ref(false);
     
     // Registro de notificaciones ya procesadas (leídas o eliminadas)
     const processedNotifications = ref({});
@@ -1008,50 +1037,31 @@ export default {
 
     // Función para verificar fechas límite y crear notificaciones
     const checkTaskDeadlines = () => {
-      console.log('======== DEBUG FECHAS ========');
+      console.log('========= VERIFICANDO FECHAS LÍMITE =========');
       
       tasks.value.forEach(task => {
         if (!task.completed && task.dueDate) {
-          console.log(`\nAnalizando tarea: "${task.title}" (vence: ${task.dueDate})`);
-          
-          // 1. Obtener fechas en formato ISO para debug
+          // Obtener fecha y hora actual
           const now = new Date();
-          console.log(`Fecha y hora actual: ${now.toISOString()} (${now})`);
           
-          // 2. Crear una fecha a partir del string de fecha límite
-          // Primero, consigue la fecha sin horas
-          const dueDateParts = task.dueDate.split('-').map(p => parseInt(p, 10));
-          const dueYear = dueDateParts[0];
-          const dueMonth = dueDateParts[1] - 1; // Meses en JS van de 0-11
-          const dueDay = dueDateParts[2];
+          // Crear fecha de vencimiento a las 23:59:59 del día seleccionado
+          const taskDueDate = new Date(task.dueDate);
+          taskDueDate.setHours(23, 59, 59, 999);
+
+          // Calcular diferencia en milisegundos
+          const diffMs = taskDueDate - now;
           
-          console.log(`Partes de fecha: año=${dueYear}, mes=${dueMonth + 1}, día=${dueDay}`);
+          // Convertir a horas
+          const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
           
-          // 3. Crear objeto Date para el final del día de vencimiento (23:59:59)
-          // Creamos fecha específica con la hora al final del día
-          const dueDate = new Date(dueYear, dueMonth, dueDay, 23, 59, 59, 999);
-          console.log(`Fecha límite (final del día): ${dueDate.toISOString()} (${dueDate})`);
-          
-          // 4. Calcular diferencia en milisegundos
-          const diffMs = dueDate.getTime() - now.getTime();
-          console.log(`Diferencia en ms: ${diffMs}`);
-          
-          // 5. Convertir a horas (siempre hacia abajo)
-          const msPerHour = 1000 * 60 * 60;
-          const diffHours = Math.floor(diffMs / msPerHour);
-          console.log(`Diferencia en horas: ${diffHours}`);
-          
-          // 6. Calcular días y horas para mensajes
+          // Calcular días y horas restantes para mensajes
           const diffDays = Math.floor(diffHours / 24);
           const remainingHours = diffHours % 24;
-          console.log(`Equivale a: ${diffDays} días y ${remainingHours} horas`);
           
-          // Si la diferencia es negativa, la tarea está vencida
-          if (diffMs < 0) {
-            console.log('TAREA VENCIDA');
-          } else {
-            console.log('TAREA PENDIENTE');
-          }
+          console.log(`Tarea: ${task.title}`);
+          console.log(`Fecha actual: ${now.toLocaleString()}`);
+          console.log(`Fecha límite: ${taskDueDate.toLocaleString()}`);
+          console.log(`Diferencia en horas: ${diffHours} (${diffDays} días y ${remainingHours} horas)`);
           
           // Notificar 48 horas antes
           if (diffHours <= 48 && diffHours > 0) {
@@ -1086,7 +1096,8 @@ export default {
                 
                 console.log(`📝 Mensaje: ${mensaje}`);
                 
-                notifications.value.unshift({
+                // Crear notificación interna
+                const newNotification = {
                   id: Date.now(),
                   taskId: task.id,
                   type: 'deadline-warning',
@@ -1094,7 +1105,30 @@ export default {
                   message: mensaje,
                   timestamp: now,
                   read: false
-                });
+                };
+                
+                notifications.value.unshift(newNotification);
+                
+                // Crear notificación del navegador si están habilitadas
+                if (notificationsEnabled.value && 'Notification' in window) {
+                  try {
+                    // Comprobar si el navegador soporta notificaciones y si tenemos permiso
+                    if (Notification.permission === 'granted') {
+                      const notificationOptions = {
+                        body: mensaje,
+                        icon: '/favicon.ico',
+                        badge: '/favicon.ico',
+                        vibrate: [200, 100, 200],
+                        tag: `task-${task.id}`
+                      };
+                      
+                      // Mostrar notificación del navegador
+                      new Notification('TaskMaster - Recordatorio', notificationOptions);
+                    }
+                  } catch (error) {
+                    console.error('Error al mostrar notificación:', error);
+                  }
+                }
               }
             }
           }
@@ -1128,7 +1162,8 @@ export default {
                 
                 console.log(`📝 Mensaje: ${mensaje}`);
                 
-                notifications.value.unshift({
+                // Crear notificación interna
+                const newNotification = {
                   id: Date.now(),
                   taskId: task.id,
                   type: 'deadline-expired',
@@ -1136,7 +1171,30 @@ export default {
                   message: mensaje,
                   timestamp: now,
                   read: false
-                });
+                };
+                
+                notifications.value.unshift(newNotification);
+                
+                // Crear notificación del navegador si están habilitadas
+                if (notificationsEnabled.value && 'Notification' in window) {
+                  try {
+                    // Comprobar si el navegador soporta notificaciones y si tenemos permiso
+                    if (Notification.permission === 'granted') {
+                      const notificationOptions = {
+                        body: mensaje,
+                        icon: '/favicon.ico',
+                        badge: '/favicon.ico',
+                        vibrate: [200, 100, 200, 100, 200],
+                        tag: `task-${task.id}-expired`
+                      };
+                      
+                      // Mostrar notificación del navegador
+                      new Notification('TaskMaster - Alerta', notificationOptions);
+                    }
+                  } catch (error) {
+                    console.error('Error al mostrar notificación:', error);
+                  }
+                }
               }
             }
           }
@@ -1295,6 +1353,9 @@ export default {
           console.log('Usuario autenticado:', userData.email);
           user.value = userData;
           
+          // Solicitar permiso para notificaciones y configurar FCM
+          initializeNotifications();
+          
           // Cargar tareas del usuario
           loadTasksFromFirebase();
         } else {
@@ -1311,6 +1372,135 @@ export default {
         clearInterval(deadlineChecker);
       };
     });
+
+    // Inicializar notificaciones push
+    const initializeNotifications = async () => {
+      try {
+        // Verificar si las notificaciones ya están habilitadas
+        notificationsEnabled.value = localStorage.getItem('notificationsEnabled') === 'true';
+        
+        // Si ya están habilitadas, verificar el permiso actual
+        if (notificationsEnabled.value && 'Notification' in window) {
+          if (Notification.permission !== 'granted') {
+            // Si el permiso ya no está concedido, actualizar estado
+            notificationsEnabled.value = false;
+            localStorage.setItem('notificationsEnabled', 'false');
+          } else {
+            // Permiso concedido, intentar obtener token
+            const { token } = await requestNotificationPermission();
+            if (token) {
+              saveTokenToFirestore(token);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error al inicializar notificaciones:', error);
+      }
+    };
+
+    // Función para solicitar token y guardarlo
+    const requestAndSaveToken = async () => {
+      try {
+        // Comprobar si el navegador soporta notificaciones
+        if (!('Notification' in window)) {
+          console.error('Este navegador no soporta notificaciones de escritorio');
+          notificationsEnabled.value = false;
+          localStorage.setItem('notificationsEnabled', 'false');
+          return;
+        }
+      
+        // Si ya tenemos permiso
+        if (Notification.permission === 'granted') {
+          notificationsEnabled.value = true;
+          localStorage.setItem('notificationsEnabled', 'true');
+          
+          // Solicitar token para FCM
+          const { token } = await requestNotificationPermission();
+          
+          if (token) {
+            console.log('Token FCM obtenido:', token);
+            saveTokenToFirestore(token);
+          }
+          
+          return;
+        }
+        
+        // Solicitar permiso
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          notificationsEnabled.value = true;
+          localStorage.setItem('notificationsEnabled', 'true');
+          
+          // Intentar obtener token para FCM
+          const { token } = await requestNotificationPermission();
+          if (token) {
+            saveTokenToFirestore(token);
+          }
+          
+          // Mostrar una notificación de prueba
+          new Notification('Notificaciones activadas', {
+            body: 'Recibirás alertas sobre tus tareas incluso cuando el navegador esté cerrado.',
+            icon: '/favicon.ico'
+          });
+        } else {
+          // Permiso denegado
+          notificationsEnabled.value = false;
+          localStorage.setItem('notificationsEnabled', 'false');
+          console.log('Permiso para notificaciones denegado');
+        }
+      } catch (error) {
+        console.error('Error al solicitar permiso para notificaciones:', error);
+        notificationsEnabled.value = false;
+        localStorage.setItem('notificationsEnabled', 'false');
+      }
+    };
+    
+    // Guardar token en Firestore
+    const saveTokenToFirestore = async (token) => {
+      if (!user.value || !token) return;
+      
+      try {
+        const db = getFirestore();
+        
+        try {
+          // Actualizar el documento de usuario con el token FCM
+          await updateDoc(doc(db, 'users', user.value.uid), {
+            fcmToken: token,
+            lastUpdated: Date.now()
+          });
+          console.log('Token FCM guardado en Firestore');
+        } catch (error) {
+          // Si el documento no existe, crearlo
+          if (error.code === 'not-found') {
+            await setDoc(doc(db, 'users', user.value.uid), {
+              fcmToken: token,
+              email: user.value.email,
+              lastUpdated: Date.now()
+            });
+            console.log('Documento de usuario creado con token FCM');
+          } else {
+            throw error;
+          }
+        }
+        
+        // Configurar manejador para mensajes FCM en primer plano
+        setupMessageHandler();
+      } catch (error) {
+        console.error('Error al guardar token en Firestore:', error);
+      }
+    };
+    
+    // Alternar estado de notificaciones push
+    const togglePushNotifications = async () => {
+      if (notificationsEnabled.value) {
+        // Desactivar notificaciones
+        notificationsEnabled.value = false;
+        localStorage.setItem('notificationsEnabled', 'false');
+      } else {
+        // Activar notificaciones
+        await requestAndSaveToken();
+      }
+    };
 
     const logout = async () => {
       try {
@@ -1361,7 +1551,9 @@ export default {
       formatDueDate,
       formatDueDateSummary,
       isTaskOverdue,
-      nextTask
+      nextTask,
+      notificationsEnabled,
+      togglePushNotifications
     };
   }
 };
